@@ -1,0 +1,14 @@
+# Company Shipping and Delivery Policy
+
+## 1. Order Processing Schedule
+All orders are packaged and processed Monday through Friday, excluding official public holidays.
+Orders placed on weekends will begin processing on the next business day.
+
+## 2. Shipping Delivery Tiers and Rates
+- Standard Shipping: Estimated delivery within 3 to 5 business days. Standard shipping is FREE for domestic orders with a subtotal of $50.00 or higher. For orders under $50.00, standard shipping is charged at a flat rate of $4.99.
+- Expedited Shipping: Estimated delivery within 1 to 2 business days. Expedited shipping is available for a flat rate of $14.99 regardless of order total.
+- International Shipping: Delivered in 10 to 14 business days to approved destination countries. International shipping rates and import duties are calculated at checkout.
+
+## 3. Delivery Restrictions and Exclusions
+The company DOES NOT offer same-day delivery, instant courier dispatch, or guaranteed overnight shipping under any service tier. Any representation of same-day delivery anywhere in the country is inaccurate.
+Deliveries require a valid physical street address; carrier delivery to standard P.O. boxes is not supported for hardware shipments.

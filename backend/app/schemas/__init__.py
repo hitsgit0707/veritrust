@@ -11,6 +11,11 @@ from backend.app.schemas.compliance import (
     RequestRecordSchema,
 )
 from backend.app.schemas.health import HealthResponse
+from backend.app.schemas.rag import (
+    BatchUploadResponse,
+    RetrieveRequest,
+    RetrieveResponse,
+)
 
 __all__ = [
     "IssueItem",
@@ -22,4 +27,7 @@ __all__ = [
     "AuditTraceItem",
     "RequestRecordSchema",
     "HealthResponse",
+    "BatchUploadResponse",
+    "RetrieveRequest",
+    "RetrieveResponse",
 ]

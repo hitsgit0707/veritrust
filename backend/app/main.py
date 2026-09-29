@@ -97,6 +97,12 @@ def create_app() -> FastAPI:
             timestamp=datetime.now(timezone.utc),
         )
 
+    # --------------------------------------------------------------------------
+    # API Routers
+    # --------------------------------------------------------------------------
+    from backend.app.api.v1.router import api_v1_router
+    application.include_router(api_v1_router)
+
     return application
 
 

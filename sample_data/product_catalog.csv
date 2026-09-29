@@ -1,0 +1,6 @@
+sku,product_name,category,price,return_eligible,warranty_months,description
+PROD-101,UltraSound Pro Wireless Headset,Audio,99.99,True,12,Noise-canceling Bluetooth headset with 40-hour battery life and built-in microphone.
+PROD-102,ErgoType Mechanical Keyboard,Peripherals,129.99,True,12,Custom mechanical keyboard with hot-swappable switches and ergonomic wrist rest.
+PROD-103,ClearVision 4K UltraCam,Video,79.99,True,12,Ultra HD 4K streaming webcam with auto-focus and dual stereo microphones.
+PROD-104,FlexiDesk Dual Monitor Arm,Furniture,49.99,True,12,Heavy-duty steel gas-spring monitor mount supporting screens up to 32 inches.
+PROD-105,Digital Gift Voucher $50,Gift Cards,50.00,False,0,Electronic digital gift card delivered via email. Strictly non-refundable.
