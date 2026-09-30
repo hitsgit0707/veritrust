@@ -1,11 +1,14 @@
 """Main FastAPI application module for VeriTrust AI."""
 
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import AsyncGenerator
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -102,6 +105,23 @@ def create_app() -> FastAPI:
     # --------------------------------------------------------------------------
     from backend.app.api.v1.router import api_v1_router
     application.include_router(api_v1_router)
+
+    # --------------------------------------------------------------------------
+    # Frontend Static Files (dashboard)
+    # --------------------------------------------------------------------------
+    _frontend_dir = Path(__file__).parent.parent.parent / "frontend"
+
+    if _frontend_dir.exists():
+        application.mount(
+            "/static",
+            StaticFiles(directory=str(_frontend_dir)),
+            name="static",
+        )
+
+        @application.get("/ui", include_in_schema=False)
+        async def serve_dashboard():
+            """Serve the VeriTrust dashboard SPA."""
+            return FileResponse(str(_frontend_dir / "index.html"))
 
     return application
 
