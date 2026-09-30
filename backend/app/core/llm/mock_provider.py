@@ -148,28 +148,38 @@ class MockLLMProvider(BaseLLMProvider):
                 }
             # Grounded Domain Queries
             elif "warranty" in query_part:
+                matching_sources = [s for s in found_sources if "warranty" in s.lower()]
                 data = {
                     "draft_answer": "According to our company warranty policy, all hardware products carry a standard 1-year limited warranty from the confirmed date of purchase.",
-                    "sources": [found_sources[0]] if found_sources else ["warranty_policy.txt#chunk_0"],
+                    "sources": [matching_sources[0]] if matching_sources else ([found_sources[0]] if found_sources else ["warranty_policy.txt#chunk_0"]),
                     "confidence": 0.95,
                 }
             elif "shipping" in query_part:
+                matching_sources = [s for s in found_sources if "shipping" in s.lower()]
                 data = {
                     "draft_answer": "Standard domestic shipping takes 3 to 5 business days and is free on orders over $50.",
-                    "sources": [found_sources[0]] if found_sources else ["shipping_policy.txt#chunk_0"],
+                    "sources": [matching_sources[0]] if matching_sources else ([found_sources[0]] if found_sources else ["shipping_policy.txt#chunk_0"]),
                     "confidence": 0.95,
                 }
             elif "headset" in query_part or "ultrasound" in query_part or "catalog" in query_part or "prod-101" in query_part:
+                matching_sources = [s for s in found_sources if "catalog" in s.lower() or "prod" in s.lower()]
                 data = {
                     "draft_answer": "The UltraSound Pro Wireless Headset (SKU: PROD-101) is priced at $99.99 and includes a 12-month warranty.",
-                    "sources": [found_sources[0]] if found_sources else ["product_catalog.csv#chunk_0"],
+                    "sources": [matching_sources[0]] if matching_sources else ([found_sources[0]] if found_sources else ["product_catalog.csv#chunk_0"]),
+                    "confidence": 0.95,
+                }
+            elif any(k in query_part or k in c_q for k in ["refund", "return", "receipt"]):
+                matching_sources = [s for s in found_sources if "refund" in s.lower()]
+                data = {
+                    "draft_answer": "According to our company policy, refunds are available within 30 days of purchase with the original receipt.",
+                    "sources": [matching_sources[0]] if matching_sources else ([found_sources[0]] if found_sources else ["refund_policy.txt#chunk_0"]),
                     "confidence": 0.95,
                 }
             else:
                 data = {
-                    "draft_answer": "According to our company policy, refunds are available within 30 days of purchase with the original receipt.",
-                    "sources": [found_sources[0]] if found_sources else ["refund_policy.txt#chunk_0"],
-                    "confidence": 0.95,
+                    "draft_answer": "I am unable to answer your question because the required information could not be verified from our available company knowledge base.",
+                    "sources": [],
+                    "confidence": 0.20,
                 }
 
         # 2. Judge Agent Output Pattern
@@ -287,6 +297,25 @@ class MockLLMProvider(BaseLLMProvider):
                         }
                     ],
                 }
+            # Out-of-scope questions with unsupported factual claims in draft (not cautious)
+            elif (
+                any(k in eval_part for k in ["india", "captain", "cricket"])
+                or ("refund" in draft_section and not any(k in eval_part for k in ["refund", "return", "receipt", "order", "purchase"]))
+            ) and not any(k in draft_section for k in ["unable to answer", "could not be verified", "insufficient", "cannot answer"]):
+                data = {
+                    "approved": False,
+                    "score": 25,
+                    "issues": [
+                        {
+                            "issue_type": "MISSING_EVIDENCE",
+                            "description": "Sufficient evidence could not be verified from the knowledge base to support the factual claims in the draft.",
+                            "severity": "CRITICAL",
+                            "claim_text": draft_section.strip()[:120],
+                            "evidence_ref": "NONE",
+                            "source": "NONE",
+                        }
+                    ],
+                }
             # Case 1 / Verified answer: Approval
             else:
                 data = {
@@ -298,9 +327,9 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 3. Correction Agent Output Pattern
         elif {"corrected_answer", "explanation"}.issubset(field_names):
-            if any(k in lower_prompt for k in ["persistent_failure", "unresolvable", "fail_correction", "bitcoin", "dogecoin", "cryptocurrency"]):
+            if any(k in lower_prompt for k in ["persistent_failure", "unresolvable", "fail_correction", "bitcoin", "dogecoin", "cryptocurrency", "india", "captain", "cricket"]):
                 data = {
-                    "corrected_answer": "Unresolvable claim: We cannot verify this payment method against the company knowledge base.",
+                    "corrected_answer": "Unresolvable claim: We cannot verify this information against the company knowledge base.",
                     "explanation": "Unable to verify this claim against available company records after multiple attempts.",
                 }
             elif "45 days" in lower_prompt:
@@ -323,10 +352,15 @@ class MockLLMProvider(BaseLLMProvider):
                     "corrected_answer": "Standard domestic shipping takes 3 to 5 business days and is free on orders over $50.",
                     "explanation": "Corrected delivery timeframe from same-day delivery to standard shipping of 3-5 business days.",
                 }
-            else:
+            elif any(k in lower_prompt for k in ["refund", "return", "receipt"]):
                 data = {
                     "corrected_answer": "Refunds are available within 30 days of purchase in accordance with company policy.",
                     "explanation": "Aligned draft precisely with verified knowledge base evidence.",
+                }
+            else:
+                data = {
+                    "corrected_answer": "I am unable to answer your question because the required information could not be verified from our available company knowledge base.",
+                    "explanation": "Aligned draft with the lack of verified company records for this topic.",
                 }
 
         # Fallback: Populate field defaults based on types

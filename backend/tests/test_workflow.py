@@ -318,3 +318,54 @@ async def test_workflow_state_tracks_correction_attempts(populated_rag_service):
     )
     assert state_3["correction_attempts"] == 3
     assert state_3["status"] == "BLOCKED"
+
+
+# ==============================================================================
+# 11. Out-of-Scope Grounding Regression Test
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_workflow_out_of_scope_query_team_india(populated_rag_service):
+    """
+    Regression Test: An out-of-scope question ('Who is captain of team India?')
+    must not produce a refund-policy response, must not cite unrelated refund sources,
+    and must not approve an unsupported answer.
+    """
+    mock_llm = MockLLMProvider()
+    question = "Who is captain of team India?"
+
+    final_state = await run_compliance_workflow(
+        question=question,
+        llm_provider=mock_llm,
+        rag_service=populated_rag_service,
+    )
+
+    final_answer = final_state.get("final_answer", "")
+    sources = final_state.get("sources", [])
+
+    # 1. Final answer does not contain the refund-policy answer
+    assert "refund" not in final_answer.lower()
+    assert "30 days" not in final_answer.lower()
+    assert "return" not in final_answer.lower()
+
+    # 2. No unrelated refund source is cited (and no irrelevant sources cited)
+    assert not any("refund" in s.lower() for s in sources)
+    assert len(sources) == 0
+
+    # 3. The workflow does not approve an unsupported answer (returns cautious unable-to-answer)
+    cautious_keywords = ["unable to answer", "could not be verified", "insufficient", "cannot answer"]
+    assert any(k in final_answer.lower() for k in cautious_keywords)
+
+    # 4. If an unsupported draft answer (e.g. refund claim or cricket claim) is evaluated,
+    # the Judge Agent must NOT approve it.
+    from backend.app.agents.judge import JudgeAgent
+    judge = JudgeAgent(llm_provider=mock_llm)
+    unsupported_eval = await judge.evaluate(
+        question=question,
+        draft_answer="According to company policy, refunds are available within 30 days of purchase.",
+        retrieved_evidence=final_state.get("retrieved_evidence", []),
+        sources=["product_catalog.csv#chunk_0"],
+    )
+    assert unsupported_eval.approved is False
+    assert any(i.issue_type in ("MISSING_EVIDENCE", "CONTRADICTION") for i in unsupported_eval.issues)
+
