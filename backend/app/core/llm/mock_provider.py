@@ -92,34 +92,76 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 1. Maker Agent Output Pattern
         if {"draft_answer", "sources", "confidence"}.issubset(field_names):
-            if "case 2" in lower_prompt or "45 days" in lower_prompt:
+            found_sources = re.findall(r"\[Source:\s*([^\]]+)\]", prompt)
+
+            # Isolate query directives from retrieved knowledge chunks so evidence text doesn't trigger false positives
+            query_part = prompt.split("Retrieved Company Knowledge-Base Evidence:")[0].lower()
+
+            # Extract specific customer question and adversarial mode if present
+            question_match = re.search(r'Customer Question:\s*\n?"?([^"\n]+)"?', prompt, re.IGNORECASE)
+            c_q = question_match.group(1).lower().strip() if question_match else query_part
+            adv_match = re.search(r'ADVERSARIAL_MODE:\s*([^\n]+)', prompt, re.IGNORECASE)
+            adv_mode = adv_match.group(1).lower().strip() if adv_match else ""
+
+            # Insufficient evidence scenario
+            is_out_of_scope = any(k in c_q for k in ["cryptocurrency", "dogecoin", "bitcoin", "gold bullion", "pet dog", "out-of-scope"])
+            if "no relevant evidence" in lower_prompt or "insufficient" in query_part or is_out_of_scope or (not found_sources and "case" not in query_part and "45 days" not in c_q and "warranty" not in c_q and "shipping" not in c_q and "refund" not in c_q):
+                data = {
+                    "draft_answer": "I am unable to answer your question because the required information could not be verified from our available company knowledge base.",
+                    "sources": [],
+                    "confidence": 0.20,
+                }
+            # Adversarial Case 2: Contradiction (45 days)
+            elif "case 2" in adv_mode or "case 2" in query_part or "45 days" in query_part:
                 data = {
                     "draft_answer": "Refunds are accepted within 45 days with original receipt.",
-                    "sources": ["sample_data/refund_policy.txt#chunk_1"],
+                    "sources": [found_sources[0]] if found_sources else ["refund_policy.txt#chunk_0"],
                     "confidence": 0.88,
                 }
-            elif "case 3" in lower_prompt or "premium" in lower_prompt:
+            # Adversarial Case 3: Fabricated Policy (Premium replacement)
+            elif "case 3" in adv_mode or "case 3" in query_part or "vip care" in query_part or "vip" in c_q or "premium" in c_q:
                 data = {
                     "draft_answer": "Premium users receive free replacement anytime under our VIP care policy.",
-                    "sources": ["sample_data/product_catalog.csv#chunk_1"],
+                    "sources": [found_sources[0]] if found_sources else ["warranty_policy.txt#chunk_0"],
                     "confidence": 0.85,
                 }
-            elif "case 4" in lower_prompt or "2 years" in lower_prompt:
+            # Adversarial Case 4: Numerical / Period Drift (2 years vs 1 year)
+            elif "case 4" in adv_mode or "case 4" in query_part or "2 years" in query_part or "2-year" in query_part:
                 data = {
                     "draft_answer": "All devices are covered by a 2-year comprehensive hardware warranty.",
-                    "sources": ["sample_data/warranty_policy.txt#chunk_1"],
+                    "sources": [found_sources[0]] if found_sources else ["warranty_policy.txt#chunk_0"],
                     "confidence": 0.90,
                 }
-            elif "case 5" in lower_prompt or "confidence 0.99" in lower_prompt:
+            # Adversarial Case 5: Overconfident wrong facts
+            elif "case 5" in adv_mode or "case 5" in query_part or "same-day" in query_part or "confidence 0.99" in query_part:
                 data = {
                     "draft_answer": "All items are delivered same-day anywhere in the country.",
-                    "sources": ["sample_data/shipping_policy.txt#chunk_1"],
+                    "sources": [found_sources[0]] if found_sources else ["shipping_policy.txt#chunk_0"],
                     "confidence": 0.99,
+                }
+            # Grounded Domain Queries
+            elif "warranty" in query_part:
+                data = {
+                    "draft_answer": "According to our company warranty policy, all hardware products carry a standard 1-year limited warranty from the confirmed date of purchase.",
+                    "sources": [found_sources[0]] if found_sources else ["warranty_policy.txt#chunk_0"],
+                    "confidence": 0.95,
+                }
+            elif "shipping" in query_part:
+                data = {
+                    "draft_answer": "Standard domestic shipping takes 3 to 5 business days and is free on orders over $50.",
+                    "sources": [found_sources[0]] if found_sources else ["shipping_policy.txt#chunk_0"],
+                    "confidence": 0.95,
+                }
+            elif "headset" in query_part or "ultrasound" in query_part or "catalog" in query_part or "prod-101" in query_part:
+                data = {
+                    "draft_answer": "The UltraSound Pro Wireless Headset (SKU: PROD-101) is priced at $99.99 and includes a 12-month warranty.",
+                    "sources": [found_sources[0]] if found_sources else ["product_catalog.csv#chunk_0"],
+                    "confidence": 0.95,
                 }
             else:
                 data = {
-                    "draft_answer": "According to our company policy, refunds are available within 30 days of purchase.",
-                    "sources": ["sample_data/refund_policy.txt#chunk_1"],
+                    "draft_answer": "According to our company policy, refunds are available within 30 days of purchase with the original receipt.",
+                    "sources": [found_sources[0]] if found_sources else ["refund_policy.txt#chunk_0"],
                     "confidence": 0.95,
                 }
 
