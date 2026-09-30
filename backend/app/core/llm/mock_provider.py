@@ -103,9 +103,16 @@ class MockLLMProvider(BaseLLMProvider):
             adv_match = re.search(r'ADVERSARIAL_MODE:\s*([^\n]+)', prompt, re.IGNORECASE)
             adv_mode = adv_match.group(1).lower().strip() if adv_match else ""
 
+            # Persistent failure scenario: always produces an unverifiable claim so the Judge
+            # rejects it every time, causing the workflow to exhaust 3 retries and BLOCK.
+            if "persistent_failure" in adv_mode:
+                data = {
+                    "draft_answer": "We accept bitcoin and dogecoin payments with zero fees as a premium payment option.",
+                    "sources": [],
+                    "confidence": 0.90,
+                }
             # Insufficient evidence scenario
-            is_out_of_scope = any(k in c_q for k in ["cryptocurrency", "dogecoin", "bitcoin", "gold bullion", "pet dog", "out-of-scope"])
-            if "no relevant evidence" in lower_prompt or "insufficient" in query_part or is_out_of_scope or (not found_sources and "case" not in query_part and "45 days" not in c_q and "warranty" not in c_q and "shipping" not in c_q and "refund" not in c_q):
+            elif "no relevant evidence" in lower_prompt or "insufficient" in query_part or any(k in c_q for k in ["cryptocurrency", "dogecoin", "bitcoin", "gold bullion", "pet dog", "out-of-scope"]) or (not found_sources and "case" not in query_part and "45 days" not in c_q and "warranty" not in c_q and "shipping" not in c_q and "refund" not in c_q):
                 data = {
                     "draft_answer": "I am unable to answer your question because the required information could not be verified from our available company knowledge base.",
                     "sources": [],
@@ -167,11 +174,22 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 2. Judge Agent Output Pattern
         elif {"approved", "score", "issues"}.issubset(field_names):
-            # Isolate draft and question from retrieved evidence to avoid keywords in evidence (e.g. VIP, Same-Day) triggering false rejections
+            # Isolate draft and question from retrieved evidence to avoid keywords in evidence triggering false rejections
             eval_part = prompt.split("Retrieved Company Knowledge-Base Evidence:")[0].lower()
 
-            # Source Mismatch scenario
+            # For adversarial keyword routing, extract only the draft answer section.
+            # The Customer Question line persists across all iterations (including after correction),
+            # so routing on the full eval_part would cause corrected answers to keep being rejected.
+            if "maker draft answer to evaluate:" in eval_part:
+                draft_section = eval_part.split("maker draft answer to evaluate:")[1]
+                if "maker cited sources:" in draft_section:
+                    draft_section = draft_section.split("maker cited sources:")[0]
+            else:
+                draft_section = eval_part
+
+            # Source Mismatch scenario — check full eval_part since source info is in metadata
             if "source_mismatch" in eval_part or "fabricated_source" in eval_part or "fake_source" in eval_part or "source mismatch" in eval_part:
+
                 data = {
                     "approved": False,
                     "score": 40,
@@ -187,7 +205,7 @@ class MockLLMProvider(BaseLLMProvider):
                     ],
                 }
             # Adversarial Case 2: Contradiction (45 days vs 30 days)
-            elif "45 days" in eval_part:
+            elif "45 days" in draft_section:
                 data = {
                     "approved": False,
                     "score": 40,
@@ -203,7 +221,7 @@ class MockLLMProvider(BaseLLMProvider):
                     ],
                 }
             # Adversarial Case 3: Fabricated Policy (Premium replacement)
-            elif "premium" in eval_part or "vip care" in eval_part or "vip" in eval_part:
+            elif "premium" in draft_section or "vip care" in draft_section or "vip" in draft_section:
                 data = {
                     "approved": False,
                     "score": 30,
@@ -219,7 +237,7 @@ class MockLLMProvider(BaseLLMProvider):
                     ],
                 }
             # Adversarial Case 4: Numerical / Period Drift (2 years vs 1 year)
-            elif "2-year" in eval_part or "2 years" in eval_part:
+            elif "2-year" in draft_section or "2 years" in draft_section:
                 data = {
                     "approved": False,
                     "score": 45,
@@ -235,7 +253,7 @@ class MockLLMProvider(BaseLLMProvider):
                     ],
                 }
             # Adversarial Case 5: Maker claims 0.99 confidence on wrong facts
-            elif "same-day" in eval_part:
+            elif "same-day" in draft_section:
                 data = {
                     "approved": False,
                     "score": 35,
@@ -251,7 +269,10 @@ class MockLLMProvider(BaseLLMProvider):
                     ],
                 }
             # Adversarial Case 6: Persistent ungrounded claims / Missing Evidence / Out of Scope
-            elif any(k in eval_part for k in ["unresolvable", "retry_count: 3", "attempt 3", "gold bullion", "bitcoin", "cryptocurrency", "missing evidence", "dogecoin", "out-of-scope"]):
+            # Check draft_section for bitcoin/dogecoin (persistent_failure Maker output) and
+            # eval_part for "unresolvable" (persistent_failure Correction output).
+            elif any(k in draft_section for k in ["bitcoin", "dogecoin", "cryptocurrency", "gold bullion", "out-of-scope"]) or \
+                 any(k in eval_part for k in ["unresolvable", "persistent_failure", "retry_count: 3", "attempt 3", "missing evidence"]):
                 data = {
                     "approved": False,
                     "score": 25,
@@ -274,22 +295,33 @@ class MockLLMProvider(BaseLLMProvider):
                     "issues": [],
                 }
 
+
         # 3. Correction Agent Output Pattern
         elif {"corrected_answer", "explanation"}.issubset(field_names):
-            if "45 days" in lower_prompt:
+            if any(k in lower_prompt for k in ["persistent_failure", "unresolvable", "fail_correction", "bitcoin", "dogecoin", "cryptocurrency"]):
                 data = {
-                    "corrected_answer": "Refunds are processed within 30 days of purchase with the original receipt.",
+                    "corrected_answer": "Unresolvable claim: We cannot verify this payment method against the company knowledge base.",
+                    "explanation": "Unable to verify this claim against available company records after multiple attempts.",
+                }
+            elif "45 days" in lower_prompt:
+                data = {
+                    "corrected_answer": "Refunds are processed within 30 days of purchase with the original receipt in accordance with company policy.",
                     "explanation": "Corrected the refund period from 45 days to the policy-verified 30 days.",
                 }
-            elif "premium" in lower_prompt:
+            elif "premium" in lower_prompt or "vip" in lower_prompt:
                 data = {
-                    "corrected_answer": "Our standard warranty and refund policies apply to all customers as specified in the catalog.",
-                    "explanation": "Removed unsupported claim regarding a VIP care free replacement policy.",
+                    "corrected_answer": "According to our company warranty policy, all hardware products carry a standard 1-year limited warranty from the confirmed date of purchase. No special replacement tiers exist.",
+                    "explanation": "Removed unsupported claim regarding a free replacement policy.",
                 }
             elif "2-year" in lower_prompt or "2 years" in lower_prompt:
                 data = {
-                    "corrected_answer": "All hardware products carry a 1-year limited warranty against manufacturing defects.",
+                    "corrected_answer": "All hardware products carry a standard 1-year limited warranty from the confirmed date of purchase.",
                     "explanation": "Corrected warranty duration from 2 years to 1 year per company policy.",
+                }
+            elif "same-day" in lower_prompt:
+                data = {
+                    "corrected_answer": "Standard domestic shipping takes 3 to 5 business days and is free on orders over $50.",
+                    "explanation": "Corrected delivery timeframe from same-day delivery to standard shipping of 3-5 business days.",
                 }
             else:
                 data = {

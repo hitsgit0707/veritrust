@@ -58,10 +58,31 @@ class CorrectionOutput(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CorrectionResult(CorrectionOutput):
+    """Encapsulates the Correction Agent's output."""
+    corrections: List[str] = Field(default_factory=list, description="List of specific corrections made")
+
+
 class AskRequest(BaseModel):
     """Payload for submitting a customer query to the compliance filter."""
     question: str = Field(..., min_length=1, max_length=2000, description="Customer question to evaluate")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional caller metadata or session tags")
+
+
+class AskResponse(BaseModel):
+    """Customer-facing response payload for POST /api/v1/ask."""
+    request_id: str = Field(..., description="Unique request identifier")
+    question: str = Field(..., description="Original customer question")
+    status: str = Field(..., description="Compliance status: APPROVED or BLOCKED")
+    approved: bool = Field(..., description="Whether final answer is verified and approved")
+    answer: str = Field(..., description="Customer-facing final answer")
+    sources: List[str] = Field(default_factory=list, description="List of cited verified source IDs")
+    judge_score: Optional[int] = Field(default=None, description="Final Judge compliance score")
+    correction_attempts: int = Field(default=0, description="Number of correction cycles performed")
+    latency_ms: Optional[float] = Field(default=None, description="Total workflow processing latency")
+    issues: List[IssueItem] = Field(default_factory=list, description="Issues detected during evaluation")
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuditTraceItem(BaseModel):

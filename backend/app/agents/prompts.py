@@ -1,6 +1,6 @@
 """Prompt templates and system instructions for VeriTrust AI agents."""
 
-from typing import List, Optional
+from typing import Any, List, Optional
 from backend.app.rag.vector_store import RetrievedChunk
 
 MAKER_SYSTEM_PROMPT = (
@@ -101,5 +101,60 @@ def build_judge_prompt(
         f"Determine if the draft should be approved (approved: true/false).\n"
         f"Calculate an explainable compliance score (0-100).\n"
         f"List all identified compliance issues with issue_type, description, severity, claim_text, evidence_ref, and source."
+    )
+    return prompt
+
+
+CORRECTION_SYSTEM_PROMPT = (
+    "You are the Correction Agent for VeriTrust AI, an enterprise compliance and factual verification system.\n"
+    "Your responsibility is to rewrite rejected customer support draft answers using EXCLUSIVELY facts "
+    "supported by the provided knowledge-base evidence, resolving all issues identified by the Judge Agent.\n\n"
+    "CRITICAL CORRECTION RULES:\n"
+    "1. Read all issues flagged by the Judge Agent.\n"
+    "2. Remove any unsupported claims, fabricated policies, or inaccurate statements.\n"
+    "3. Correct contradictions and incorrect numerical/timeframe values to align precisely with verified evidence.\n"
+    "4. Preserve accurate, grounded parts of the original draft where possible.\n"
+    "5. NEVER invent replacement facts, terms, or unverified claims.\n"
+    "6. If the evidence does not contain sufficient information to answer the question, state clearly that "
+    "the information could not be verified from the available company knowledge base.\n"
+    "7. Provide a concise explanation of what was removed or corrected."
+)
+
+
+def build_correction_prompt(
+    question: str,
+    draft_answer: str,
+    issues: List[Any],
+    retrieved_chunks: List[RetrievedChunk],
+) -> str:
+    """Format customer question, rejected draft, Judge issues, and evidence for Correction Agent."""
+    evidence_blocks = []
+    for idx, chunk in enumerate(retrieved_chunks, start=1):
+        evidence_blocks.append(
+            f"--- Evidence Item {idx} ---\n"
+            f"[Source: {chunk.source}]\n"
+            f"Document: {chunk.filename}\n"
+            f"Content:\n{chunk.text.strip()}\n"
+        )
+    evidence_text = "\n".join(evidence_blocks) if evidence_blocks else "[NO RETRIEVED EVIDENCE PROVIDED]"
+
+    issue_lines = []
+    for idx, issue in enumerate(issues, start=1):
+        itype = getattr(issue, "issue_type", str(issue.get("issue_type") if isinstance(issue, dict) else issue))
+        desc = getattr(issue, "description", str(issue.get("description") if isinstance(issue, dict) else ""))
+        claim = getattr(issue, "claim_text", getattr(issue, "claim", str(issue.get("claim_text") if isinstance(issue, dict) else "")))
+        issue_lines.append(f"{idx}. [{itype}] {desc} (Offending claim: '{claim}')")
+
+    issues_text = "\n".join(issue_lines) if issue_lines else "None specified"
+
+    prompt = (
+        f"Customer Question:\n\"{question}\"\n\n"
+        f"Rejected Draft Answer:\n\"{draft_answer}\"\n\n"
+        f"Judge Identified Compliance Issues:\n{issues_text}\n\n"
+        f"Retrieved Company Knowledge-Base Evidence:\n{evidence_text}\n\n"
+        f"Instructions:\n"
+        f"Rewrite the draft answer so it is 100% compliant with the verified evidence.\n"
+        f"Remove or correct every identified issue.\n"
+        f"Provide your 'corrected_answer' and an 'explanation' detailing what was corrected."
     )
     return prompt
