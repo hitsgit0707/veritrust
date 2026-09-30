@@ -167,8 +167,27 @@ class MockLLMProvider(BaseLLMProvider):
 
         # 2. Judge Agent Output Pattern
         elif {"approved", "score", "issues"}.issubset(field_names):
+            # Isolate draft and question from retrieved evidence to avoid keywords in evidence (e.g. VIP, Same-Day) triggering false rejections
+            eval_part = prompt.split("Retrieved Company Knowledge-Base Evidence:")[0].lower()
+
+            # Source Mismatch scenario
+            if "source_mismatch" in eval_part or "fabricated_source" in eval_part or "fake_source" in eval_part or "source mismatch" in eval_part:
+                data = {
+                    "approved": False,
+                    "score": 40,
+                    "issues": [
+                        {
+                            "issue_type": "SOURCE_MISMATCH",
+                            "description": "Maker cited a source that does not exist in the retrieved evidence or does not support the draft claim.",
+                            "severity": "HIGH",
+                            "claim_text": "Claim citing invalid source",
+                            "evidence_ref": "NONE",
+                            "source": "fabricated_source.txt#chunk_99",
+                        }
+                    ],
+                }
             # Adversarial Case 2: Contradiction (45 days vs 30 days)
-            if "45 days" in lower_prompt:
+            elif "45 days" in eval_part:
                 data = {
                     "approved": False,
                     "score": 40,
@@ -179,11 +198,12 @@ class MockLLMProvider(BaseLLMProvider):
                             "severity": "CRITICAL",
                             "claim_text": "Refunds are accepted within 45 days with original receipt.",
                             "evidence_ref": "Refunds are available within 30 days of purchase.",
+                            "source": "refund_policy.txt#chunk_0",
                         }
                     ],
                 }
             # Adversarial Case 3: Fabricated Policy (Premium replacement)
-            elif "premium" in lower_prompt or "vip care" in lower_prompt:
+            elif "premium" in eval_part or "vip care" in eval_part or "vip" in eval_part:
                 data = {
                     "approved": False,
                     "score": 30,
@@ -194,11 +214,12 @@ class MockLLMProvider(BaseLLMProvider):
                             "severity": "CRITICAL",
                             "claim_text": "Premium users receive free replacement anytime under our VIP care policy.",
                             "evidence_ref": "NONE",
+                            "source": "warranty_policy.txt#chunk_0",
                         }
                     ],
                 }
             # Adversarial Case 4: Numerical / Period Drift (2 years vs 1 year)
-            elif "2-year" in lower_prompt or "2 years" in lower_prompt:
+            elif "2-year" in eval_part or "2 years" in eval_part:
                 data = {
                     "approved": False,
                     "score": 45,
@@ -209,11 +230,12 @@ class MockLLMProvider(BaseLLMProvider):
                             "severity": "HIGH",
                             "claim_text": "covered by a 2-year comprehensive hardware warranty.",
                             "evidence_ref": "All hardware products carry a 1-year limited warranty.",
+                            "source": "warranty_policy.txt#chunk_0",
                         }
                     ],
                 }
             # Adversarial Case 5: Maker claims 0.99 confidence on wrong facts
-            elif "same-day" in lower_prompt:
+            elif "same-day" in eval_part:
                 data = {
                     "approved": False,
                     "score": 35,
@@ -224,21 +246,23 @@ class MockLLMProvider(BaseLLMProvider):
                             "severity": "CRITICAL",
                             "claim_text": "All items are delivered same-day anywhere in the country.",
                             "evidence_ref": "Standard shipping takes 3-5 business days.",
+                            "source": "shipping_policy.txt#chunk_0",
                         }
                     ],
                 }
-            # Adversarial Case 6: Persistent ungrounded claims
-            elif "unresolvable" in lower_prompt or "retry_count: 3" in lower_prompt or "attempt 3" in lower_prompt:
+            # Adversarial Case 6: Persistent ungrounded claims / Missing Evidence / Out of Scope
+            elif any(k in eval_part for k in ["unresolvable", "retry_count: 3", "attempt 3", "gold bullion", "bitcoin", "cryptocurrency", "missing evidence", "dogecoin", "out-of-scope"]):
                 data = {
                     "approved": False,
                     "score": 25,
                     "issues": [
                         {
                             "issue_type": "MISSING_EVIDENCE",
-                            "description": "Sufficient evidence could not be verified from the knowledge base after multiple correction attempts.",
+                            "description": "Sufficient evidence could not be verified from the knowledge base to support the factual claims in the draft.",
                             "severity": "CRITICAL",
-                            "claim_text": "Unverified claim",
+                            "claim_text": "Payment accepted in gold bullion or bitcoin",
                             "evidence_ref": "NONE",
+                            "source": "NONE",
                         }
                     ],
                 }

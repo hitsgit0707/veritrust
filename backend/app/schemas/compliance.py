@@ -7,13 +7,29 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class IssueItem(BaseModel):
     """Structured compliance issue detected by the Judge Agent."""
-    issue_type: str = Field(..., description="Category: CONTRADICTION, FABRICATED_POLICY, UNSUPPORTED_NUMERICAL, MISSING_EVIDENCE, UNSUPPORTED_FACT")
+    issue_type: str = Field(..., description="Category: CONTRADICTION, FABRICATED_POLICY, UNSUPPORTED_NUMERICAL, MISSING_EVIDENCE, UNSUPPORTED_FACT, SOURCE_MISMATCH")
     description: str = Field(..., description="Clear explanation of the violation")
     severity: str = Field(default="HIGH", description="Severity: CRITICAL, HIGH, MEDIUM, LOW")
-    claim_text: str = Field(..., description="The offending claim in the draft")
+    claim_text: str = Field(default="", description="The offending claim in the draft")
     evidence_ref: Optional[str] = Field(default=None, description="Quoted snippet from verified knowledge base or 'NONE'")
+    source: Optional[str] = Field(default=None, description="Source chunk ID or document reference where mismatch occurred")
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    def __init__(self, **data: Any):
+        if "claim" in data and not data.get("claim_text"):
+            data["claim_text"] = data["claim"]
+        if "evidence" in data and not data.get("evidence_ref"):
+            data["evidence_ref"] = data["evidence"]
+        super().__init__(**data)
+
+    @property
+    def claim(self) -> str:
+        return self.claim_text
+
+    @property
+    def evidence(self) -> Optional[str]:
+        return self.evidence_ref
 
 
 class MakerOutput(BaseModel):

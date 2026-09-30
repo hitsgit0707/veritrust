@@ -50,3 +50,56 @@ def build_maker_prompt(
         prompt = f"ADVERSARIAL_MODE: {adversarial_mode}\n\n" + prompt
 
     return prompt
+
+
+JUDGE_SYSTEM_PROMPT = (
+    "You are the Judge Agent for VeriTrust AI, an enterprise compliance and factual verification system.\n"
+    "Your responsibility is to strictly and objectively audit customer support draft answers against "
+    "retrieved company knowledge-base evidence.\n\n"
+    "CRITICAL EVALUATION RULES:\n"
+    "1. Never trust the Maker's self-assessed confidence or claim of truth. Evaluate ONLY against the actual evidence provided.\n"
+    "2. If the draft contains ANY claim directly contradicting verified evidence, flag as CONTRADICTION.\n"
+    "3. If the draft invents or asserts policies, tiers, or programs explicitly negated or absent from the evidence, flag as FABRICATED_POLICY.\n"
+    "4. If numbers, durations, percentages, or timeframes differ from the evidence, flag as UNSUPPORTED_NUMERICAL.\n"
+    "5. If an important factual statement is made with no supporting evidence in the knowledge base, flag as MISSING_EVIDENCE or UNSUPPORTED_FACT.\n"
+    "6. If the Maker cites a source that does not contain or support the claim, flag as SOURCE_MISMATCH.\n"
+    "7. A draft must be APPROVED (approved=true) ONLY if it contains ZERO contradictions, ZERO fabricated policies, and ALL claims are fully supported.\n"
+    "8. Assign an explainable compliance score between 0 and 100 (100 = completely grounded, 0 = entirely fabricated or severe contradiction)."
+)
+
+
+def build_judge_prompt(
+    question: str,
+    draft_answer: str,
+    retrieved_chunks: List[RetrievedChunk],
+    sources: Optional[List[str]] = None,
+    confidence: Optional[float] = None,
+) -> str:
+    """Format customer question, draft answer, cited sources, and retrieved evidence for Judge evaluation."""
+    evidence_blocks = []
+    for idx, chunk in enumerate(retrieved_chunks, start=1):
+        evidence_blocks.append(
+            f"--- Evidence Item {idx} ---\n"
+            f"[Source: {chunk.source}]\n"
+            f"Document: {chunk.filename}\n"
+            f"Content:\n{chunk.text.strip()}\n"
+        )
+    evidence_text = "\n".join(evidence_blocks) if evidence_blocks else "[NO RETRIEVED EVIDENCE PROVIDED]"
+
+    sources_text = ", ".join(sources) if sources else "None cited"
+    confidence_text = f"{confidence:.2f}" if confidence is not None else "Not provided"
+
+    prompt = (
+        f"Customer Question:\n\"{question}\"\n\n"
+        f"Maker Draft Answer to Evaluate:\n\"{draft_answer}\"\n\n"
+        f"Maker Cited Sources: {sources_text}\n"
+        f"Maker Self-Assessed Confidence: {confidence_text}\n\n"
+        f"Retrieved Company Knowledge-Base Evidence:\n"
+        f"{evidence_text}\n\n"
+        f"Instructions:\n"
+        f"Independently audit the Maker Draft Answer against the verified evidence.\n"
+        f"Determine if the draft should be approved (approved: true/false).\n"
+        f"Calculate an explainable compliance score (0-100).\n"
+        f"List all identified compliance issues with issue_type, description, severity, claim_text, evidence_ref, and source."
+    )
+    return prompt
